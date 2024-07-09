@@ -1,72 +1,74 @@
-from PIL import Image
+import argparse
+import cv2
+import sys
 
-def hide_text(image_path, secret_text, output_path):
-    # Open gambar
-    image = Image.open(image_path)
-    
-    # Convert teks rahasia ke binari
-    binary_secret_text = ''.join(format(ord(char), '08b') for char in secret_text)
-    
-    # Check if the image can accommodate the secret text
-    image_capacity = image.width * image.height * 3
-    if len(binary_secret_text) > image_capacity:
-        raise ValueError("Image does not have sufficient capacity to hide the secret text.")
-    
-    # menyembunyikan text rahasia kedalam gambar 
-    pixels = image.load()
-    index = 0
-    for i in range(image.width):
-        for j in range(image.height):
-            r, g, b = pixels[i, j]
-            
-            # Modify the least significant bit of each color channel
-            if index < len(binary_secret_text):
-                r = (r & 0xFE) | int(binary_secret_text[index])
-                index += 1
-            if index < len(binary_secret_text):
-                g = (g & 0xFE) | int(binary_secret_text[index])
-                index += 1
-            if index < len(binary_secret_text):
-                b = (b & 0xFE) | int(binary_secret_text[index])
-                index += 1
-                
-            pixels[i, j] = (r, g, b)
-    
-    # menyimpan gambar dan menyembunyikan
-    image.save(output_path)
+def main():
+    # Buat argumen, parsing, dan parsing argumen
+    ap = argparse.ArgumentParser()
+    ap.add_argument("-v", "--video", required=True, help="loki_trailer.mp4")
+    args = vars(ap.parse_args())
 
-def extract_text(image_path):
-    # Open gambar
-    image = Image.open(image_path)
-    
-    # tampilkan text rahasia dari gambar
-    pixels = image.load()
-    binary_secret_text = ""
-    for i in range(image.width):
-        for j in range(image.height):
-            r, g, b = pixels[i, j]
-            
-            # Extract bit paling tidak signifikan dri setiap saluran warna
-            binary_secret_text += str(r & 1)
-            binary_secret_text += str(g & 1)
-            binary_secret_text += str(b & 1)
-    
-    # Ubah teks binar menjadi ASCII
-    secret_text = ""
-    for i in range(0, len(binary_secret_text), 8):
-        char = chr(int(binary_secret_text[i:i+8], 2))
-        if char == '\x00':
+    # Memuat video
+    camVideo = cv2.VideoCapture(args["video"])
+
+    # Periksa apakah jalur video valid
+    if not camVideo.isOpened():
+        print(f"Error: Could not open video file {args['video']}")
+        sys.exit(1)
+
+    # Mendapatkan lebar, tinggi, dan FPS video asli
+    frame_width = int(camVideo.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_height = int(camVideo.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = camVideo.get(cv2.CAP_PROP_FPS)
+
+    # Menentukan codec dan membuat objek VideoWriter untuk menyimpan video
+    output_path = 'output_video.avi'
+    fourcc = cv2.VideoWriter_fourcc(*'XVID')
+    out = cv2.VideoWriter(output_path, fourcc, fps, (frame_width, frame_height))
+
+    # Terus ulang
+    while True:
+        # Ambil bingkai saat ini dan inisialisasi status teks
+        (grabbed, frame) = camVideo.read()
+        status = "No Target in sight"
+
+        # Periksa untuk melihat apakah kita telah mencapai akhir video
+        if not grabbed:
             break
-        secret_text += char
-    
-    return secret_text
 
-# Menyembunyikan teks rahasia dalam gambar
-image_path = 'naga.jpeg'
-secret_text = 'This is a secret message.'
-output_path = 'output_naga.jpg'
-hide_text(image_path, secret_text, output_path)
+        # Ubah bingkai menjadi skala abu-abu, buramkan, dan deteksi tepinya
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        blurred = cv2.GaussianBlur(gray, (7, 7), 0)  # Blur
+        edged = cv2.Canny(blurred, 50, 150)  # Canny edge detection
 
-# Ekstrak Teks rahasia dari gambar
-extracted_text = extract_text(output_path)
-print("Extracted text:", extracted_text)
+        # Temukan kontur di peta tepi
+        cnts, _ = cv2.findContours(edged.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        # Lingkaran kontur
+        for cnt in cnts:
+            approx = cv2.approxPolyDP(cnt, 0.01 * cv2.arcLength(cnt, True), True)
+            if len(approx) == 5:
+                cv2.drawContours(frame, [approx], -1, (0, 0, 255), 4)
+                status = "Target(s) in sight!"
+
+        # Menggambar status teks pada bingkai
+        cv2.putText(frame, status, (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+
+        # Tampilkan pembingkaian dan rekam jika ada tombol yang ditekan
+        cv2.imshow("Frame", frame)
+
+        # Menyimpan frame ke file output video
+        out.write(frame)
+
+        key = cv2.waitKey(1) & 0xFF
+        # Jika tombol 's' ditekan, hentikan perulangan
+        if key == ord("s"):
+            break
+
+    # Bersihkan input rekaman video, tutup semua jendela yang terbuka, dan video writer
+    camVideo.release()
+    out.release()
+    cv2.destroyAllWindows()
+
+if __name__ == "__main__":
+    main()
