@@ -1,1 +1,1 @@
-# Tugas_PengolahanCitra
+# Tugas PengolahanCitra Pertemuan 12
