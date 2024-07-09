@@ -1,1 +1,1 @@
-# Tugas PengolahanCitra Pertemuan 12
+# Tugas Pengolahan Citra Pertemuan 13
